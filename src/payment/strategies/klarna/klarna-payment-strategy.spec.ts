@@ -94,7 +94,7 @@ describe('KlarnaPaymentStrategy', () => {
         jest.spyOn(remoteCheckoutActionCreator, 'initializePayment')
             .mockReturnValue(initializePaymentAction);
 
-        jest.spyOn(scriptLoader, 'load')
+        jest.spyOn(scriptLoader, 'loadCredit')
             .mockImplementation(() => Promise.resolve(klarnaCredit));
 
         jest.spyOn(store, 'subscribe');
@@ -108,7 +108,7 @@ describe('KlarnaPaymentStrategy', () => {
         });
 
         it('loads script when initializing strategy', () => {
-            expect(scriptLoader.load).toHaveBeenCalledTimes(1);
+            expect(scriptLoader.loadCredit).toHaveBeenCalledTimes(1);
         });
 
         it('loads payment data from API', () => {
