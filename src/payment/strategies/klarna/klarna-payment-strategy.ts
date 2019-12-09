@@ -72,22 +72,30 @@ export default class KlarnaPaymentStrategy implements PaymentStrategy {
         }
 
         const { payment: { paymentData, ...paymentPayload } } = payload;
-        const paymentMethod = this._store.getState().paymentMethods.getPaymentMethod(paymentPayload.methodId);
-        const category = paymentMethod && paymentMethod.method === 'multi-option' ? paymentMethod.id : undefined;
 
-        return this._authorize(category)
-            .then(({ authorization_token: authorizationToken }) => this._store.dispatch(
-                this._remoteCheckoutActionCreator.initializePayment(paymentPayload.methodId, { authorizationToken })
-            ))
-            .then(() => this._store.dispatch(
-                this._orderActionCreator.submitOrder({
-                    ...payload,
-                    payment: paymentPayload,
-                    // Note: API currently doesn't support using Store Credit with Klarna.
-                    // To prevent deducting customer's store credit, set it as false.
-                    useStoreCredit: false,
-                }, options)
-            ));
+        return this._store.dispatch(this._paymentMethodActionCreator.loadPaymentMethod(paymentPayload.methodId))
+            .then(state => new Promise<InternalCheckoutSelectors>(() => {
+                const paymentMethod = state.paymentMethods.getPaymentMethod(paymentPayload.methodId);
+                const category = paymentMethod && paymentMethod.method === 'multi-option' ? paymentMethod.id : undefined;
+
+                if (!paymentMethod) {
+                    throw new MissingDataError(MissingDataErrorType.MissingPaymentMethod);
+                }
+
+                this._authorize(category)
+                    .then(({ authorization_token: authorizationToken }) => this._store.dispatch(
+                        this._remoteCheckoutActionCreator.initializePayment(paymentPayload.methodId, { authorizationToken })
+                    ))
+                    .then(() => this._store.dispatch(
+                        this._orderActionCreator.submitOrder({
+                            ...payload,
+                            payment: paymentPayload,
+                            // Note: API currently doesn't support using Store Credit with Klarna.
+                            // To prevent deducting customer's store credit, set it as false.
+                            useStoreCredit: false,
+                        }, options)
+                    ));
+            }));
     }
 
     finalize(): Promise<InternalCheckoutSelectors> {
