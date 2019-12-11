@@ -73,7 +73,7 @@ export default class KlarnaPaymentStrategy implements PaymentStrategy {
 
         const { payment: { paymentData, ...paymentPayload } } = payload;
 
-        return this._store.dispatch(this._paymentMethodActionCreator.loadPaymentMethod(paymentPayload.methodId))
+        return this._store.dispatch(this._paymentMethodActionCreator.loadPaymentMethods())
             .then(state => new Promise<InternalCheckoutSelectors>(() => {
                 const paymentMethod = state.paymentMethods.getPaymentMethod(paymentPayload.methodId);
                 const category = paymentMethod && paymentMethod.method === 'multi-option' ? paymentMethod.id : undefined;
