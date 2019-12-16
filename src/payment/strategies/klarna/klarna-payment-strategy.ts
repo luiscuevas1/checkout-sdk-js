@@ -73,29 +73,19 @@ export default class KlarnaPaymentStrategy implements PaymentStrategy {
 
         const { payment: { paymentData, ...paymentPayload } } = payload;
 
-        return this._store.dispatch(this._paymentMethodActionCreator.loadPaymentMethods())
-            .then(state => new Promise<InternalCheckoutSelectors>(() => {
-                const paymentMethod = state.paymentMethods.getPaymentMethod(paymentPayload.methodId);
-                const category = paymentMethod && paymentMethod.method === 'multi-option' ? paymentMethod.id : undefined;
-
-                if (!paymentMethod) {
-                    throw new MissingDataError(MissingDataErrorType.MissingPaymentMethod);
-                }
-
-                this._authorize(category)
-                    .then(({ authorization_token: authorizationToken }) => this._store.dispatch(
-                        this._remoteCheckoutActionCreator.initializePayment(paymentPayload.methodId, { authorizationToken })
-                    ))
-                    .then(() => this._store.dispatch(
-                        this._orderActionCreator.submitOrder({
-                            ...payload,
-                            payment: paymentPayload,
-                            // Note: API currently doesn't support using Store Credit with Klarna.
-                            // To prevent deducting customer's store credit, set it as false.
-                            useStoreCredit: false,
-                        }, options)
-                    ));
-            }));
+        return this._authorize(paymentPayload.methodId)
+            .then(({authorization_token: authorizationToken}) => this._store.dispatch(
+                this._remoteCheckoutActionCreator.initializePayment(paymentPayload.methodId, {authorizationToken})
+            ))
+            .then(() => this._store.dispatch(
+                this._orderActionCreator.submitOrder({
+                    ...payload,
+                    payment: paymentPayload,
+                    // Note: API currently doesn't support using Store Credit with Klarna.
+                    // To prevent deducting customer's store credit, set it as false.
+                    useStoreCredit: false,
+                }, options)
+            ));
     }
 
     finalize(): Promise<InternalCheckoutSelectors> {
@@ -222,50 +212,60 @@ export default class KlarnaPaymentStrategy implements PaymentStrategy {
         return klarnaAddress;
     }
 
-    private _authorize(paymentMethodCategory?: string): Promise<any> {
+    private _authorize(methodId: string): Promise<any> {
         return new Promise((resolve, reject) => {
-            const billingAddress = this._store.getState().billingAddress.getBillingAddress();
-            const shippingAddress = this._store.getState().shippingAddress.getShippingAddress();
+            this._store.dispatch(this._paymentMethodActionCreator.loadPaymentMethod(methodId))
+                .then(state => new Promise<InternalCheckoutSelectors>(() => {
+                    const paymentMethod = state.paymentMethods.getPaymentMethod(methodId);
+                    const category = paymentMethod && paymentMethod.method === 'multi-option' ? paymentMethod.id : undefined;
 
-            if (!billingAddress) {
-                throw new MissingDataError(MissingDataErrorType.MissingBillingAddress);
-            }
-
-            const updateSessionData = this._getUpdateSessionData(billingAddress, shippingAddress);
-
-            if (paymentMethodCategory) {
-                if (!this._klarnaPayments) {
-                    throw new NotInitializedError(NotInitializedErrorType.PaymentNotInitialized);
-                }
-
-                this._klarnaPayments.authorize({ payment_method_category: paymentMethodCategory }, updateSessionData, res => {
-                    if (res.approved) {
-                        return resolve(res);
+                    if (!paymentMethod) {
+                        throw new MissingDataError(MissingDataErrorType.MissingPaymentMethod);
                     }
 
-                    if (res.show_form) {
-                        return reject(new PaymentMethodCancelledError());
+                    const billingAddress = this._store.getState().billingAddress.getBillingAddress();
+                    const shippingAddress = this._store.getState().shippingAddress.getShippingAddress();
+
+                    if (!billingAddress) {
+                        throw new MissingDataError(MissingDataErrorType.MissingBillingAddress);
                     }
 
-                    reject(new PaymentMethodInvalidError());
-                });
-            } else {
-                if (!this._klarnaCredit) {
-                    throw new NotInitializedError(NotInitializedErrorType.PaymentNotInitialized);
-                }
+                    const updateSessionData = this._getUpdateSessionData(billingAddress, shippingAddress);
 
-                this._klarnaCredit.authorize(updateSessionData, res => {
-                    if (res.approved) {
-                        return resolve(res);
+                    if (category) {
+                        if (!this._klarnaPayments) {
+                            throw new NotInitializedError(NotInitializedErrorType.PaymentNotInitialized);
+                        }
+
+                        this._klarnaPayments.authorize({payment_method_category: category}, updateSessionData, res => {
+                            if (res.approved) {
+                                return resolve(res);
+                            }
+
+                            if (res.show_form) {
+                                return reject(new PaymentMethodCancelledError());
+                            }
+
+                            reject(new PaymentMethodInvalidError());
+                        });
+                    } else {
+                        if (!this._klarnaCredit) {
+                            throw new NotInitializedError(NotInitializedErrorType.PaymentNotInitialized);
+                        }
+
+                        this._klarnaCredit.authorize(updateSessionData, res => {
+                            if (res.approved) {
+                                return resolve(res);
+                            }
+
+                            if (res.show_form) {
+                                return reject(new PaymentMethodCancelledError());
+                            }
+
+                            reject(new PaymentMethodInvalidError());
+                        });
                     }
-
-                    if (res.show_form) {
-                        return reject(new PaymentMethodCancelledError());
-                    }
-
-                    reject(new PaymentMethodInvalidError());
-                });
-            }
+                }));
         });
     }
 }
